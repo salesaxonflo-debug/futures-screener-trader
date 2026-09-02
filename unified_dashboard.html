@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Futures Screener & Automated Paper Trader</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-6 font-sans">
+  <div class="max-w-[1560px] mx-auto space-y-6">
+
+    <!-- Top Bar -->
+    <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-slate-900 border border-slate-800 p-6 rounded-xl shadow-lg">
+      <div>
+        <h1 class="text-xl font-bold text-white flex items-center gap-2">
+          <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+          Unified Futures Terminal
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">CraigPer1 (Structure/FVG) • Sneaky Pivot (Magic Lines) • 5x Paper Trader ($100 Account)</p>
+      </div>
+
+      <!-- Controls: Position Allocator & Tabs -->
+      <div class="flex flex-wrap items-center gap-4">
+
+        <!-- Dynamic Strategy Limits Steppers -->
+        <div class="flex items-center gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs">
+          <span class="text-slate-400 font-semibold uppercase text-[10px]">Max Slots:</span>
+
+          <div class="flex items-center gap-1.5">
+            <span class="text-indigo-400 font-bold">Craig:</span>
+            <input id="limit-craig" type="number" min="0" max="20" class="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-white font-mono" />
+            <button onclick="saveLimit('CraigPer1')" class="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold">Set</button>
+          </div>
+
+          <div class="h-4 w-px bg-slate-800 mx-1"></div>
+
+          <div class="flex items-center gap-1.5">
+            <span class="text-amber-400 font-bold">Sneaky:</span>
+            <input id="limit-sneaky" type="number" min="0" max="20" class="w-12 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-center text-white font-mono" />
+            <button onclick="saveLimit('SneakyPivot')" class="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold">Set</button>
+          </div>
+        </div>
+
+        <!-- Strategy Screener Tabs -->
+        <div class="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-1 text-xs font-semibold">
+          <button id="tab-btn-craig" onclick="switchTab('craig')" class="px-4 py-1.5 rounded bg-slate-800 text-white transition">CraigPer1</button>
+          <button id="tab-btn-sneaky" onclick="switchTab('sneaky')" class="px-4 py-1.5 rounded text-slate-400 hover:text-white transition">Sneaky Pivot</button>
+        </div>
+
+        <div id="status" class="text-xs font-mono px-3 py-1.5 bg-slate-800 text-slate-300 border border-slate-700 rounded-lg">
+          Connecting...
+        </div>
+      </div>
+    </div>
+
+    <!-- Account Stat Cards -->
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Account Equity</span>
+        <div id="equity" class="text-lg font-bold font-mono text-white mt-1">$100.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Avail. Balance</span>
+        <div id="balance" class="text-lg font-bold font-mono text-slate-300 mt-1">$100.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Unrealized PnL</span>
+        <div id="unrealized-pnl" class="text-lg font-bold font-mono text-emerald-400 mt-1">$0.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Realized PnL</span>
+        <div id="realized-pnl" class="text-lg font-bold font-mono text-slate-300 mt-1">$0.00</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Total Trades</span>
+        <div id="total-trades" class="text-lg font-bold font-mono text-white mt-1">0</div>
+      </div>
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl">
+        <span class="text-[11px] text-slate-400 uppercase font-semibold">Win Rate (5x)</span>
+        <div id="win-rate" class="text-lg font-bold font-mono text-indigo-400 mt-1">0.0%</div>
+      </div>
+    </div>
+
+    <!-- Active Positions -->
+    <div class="space-y-2">
+      <div class="flex justify-between items-center">
+        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+          Active 5x Paper Positions
+          <span id="pos-count" class="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">0</span>
+        </h2>
+      </div>
+
+      <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+        <table class="w-full text-left text-sm font-mono">
+          <thead class="bg-slate-950/80 text-slate-400 uppercase text-[11px] border-b border-slate-800">
+            <tr>
+              <th class="px-4 py-3">Symbol</th>
+              <th class="px-3 py-3">Strategy</th>
+              <th class="px-3 py-3">Side</th>
+              <th class="px-3 py-3 text-right">Margin (5x)</th>
+              <th class="px-3 py-3 text-right">Entry</th>
+              <th class="px-3 py-3 text-right">Current</th>
+              <th class="px-3 py-3 text-right text-rose-300">Stop Loss</th>
+              <th class="px-3 py-3 text-right text-emerald-300">Target</th>
+              <th class="px-3 py-3 text-right">Floating PnL</th>
+              <th class="px-4 py-3 font-sans">Rationale</th>
+              <th class="px-4 py-3 text-center font-sans">Action</th>
+            </tr>
+          </thead>
+          <tbody id="positions-body" class="divide-y divide-slate-800 text-xs">
+            <tr>
+              <td colspan="11" class="text-center py-6 text-slate-500 font-sans">Scanning Top 30 gainers for setups...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 1: CraigPer1 Screener -->
+    <div id="tab-craig" class="space-y-2">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300">Strategy 1: CraigPer1 Screener (Market Structure & FVG Midpoints)</h2>
+      <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+        <table class="w-full text-left text-sm font-mono">
+          <thead class="bg-slate-950/80 text-slate-400 uppercase text-[11px] border-b border-slate-800">
+            <tr>
+              <th class="px-4 py-3 font-sans">Rank / Pair</th>
+              <th class="px-3 py-3 text-right">Open</th>
+              <th class="px-3 py-3 text-right">High</th>
+              <th class="px-3 py-3 text-right">Low</th>
+              <th class="px-3 py-3 text-right">Current Price</th>
+              <th class="px-3 py-3 text-right">24h Gain</th>
+              <th class="px-4 py-3 text-center font-sans">Signal</th>
+              <th class="px-3 py-3 text-right text-indigo-300">Entry (FVG)</th>
+              <th class="px-3 py-3 text-right text-rose-300">SL (LIL)</th>
+              <th class="px-3 py-3 text-right text-emerald-300">TP (1:4)</th>
+              <th class="px-5 py-3 font-sans">Structure Reason</th>
+            </tr>
+          </thead>
+          <tbody id="craig-body" class="divide-y divide-slate-800 text-xs">
+            <tr>
+              <td colspan="11" class="text-center py-8 text-slate-500 font-sans">Loading CraigPer1 structure...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: Sneaky Pivot Screener -->
+    <div id="tab-sneaky" class="space-y-2 hidden">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300">Strategy 2: Sneaky Pivot Screener (4 Magic Lines & Zone Reversals)</h2>
+      <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+        <table class="w-full text-left text-sm font-mono">
+          <thead class="bg-slate-950/80 text-slate-400 uppercase text-[11px] border-b border-slate-800">
+            <tr>
+              <th class="px-4 py-3 font-sans">Pair</th>
+              <th class="px-3 py-3 text-right">Price</th>
+              <th class="px-3 py-3 text-right text-rose-400">Swing High</th>
+              <th class="px-3 py-3 text-right text-rose-300">Range High</th>
+              <th class="px-3 py-3 text-right text-emerald-300">Range Low</th>
+              <th class="px-3 py-3 text-right text-emerald-400">Swing Low</th>
+              <th class="px-4 py-3 text-center font-sans">Signal</th>
+              <th class="px-3 py-3 text-right text-indigo-300">Entry (c2 Break)</th>
+              <th class="px-3 py-3 text-right text-rose-300">Stop Loss</th>
+              <th class="px-3 py-3 text-right text-emerald-300">Target</th>
+              <th class="px-5 py-3 font-sans">Setup Note</th>
+            </tr>
+          </thead>
+          <tbody id="sneaky-body" class="divide-y divide-slate-800 text-xs">
+            <tr>
+              <td colspan="11" class="text-center py-8 text-slate-500 font-sans">Loading Sneaky Pivot Magic Lines...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Closed Trade History -->
+    <div class="space-y-2">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-300">Closed Trades Log</h2>
+      <div class="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900 shadow-xl">
+        <table class="w-full text-left text-sm font-mono">
+          <thead class="bg-slate-950/80 text-slate-400 uppercase text-[11px] border-b border-slate-800">
+            <tr>
+              <th class="px-4 py-3">Time</th>
+              <th class="px-4 py-3 font-sans">Symbol</th>
+              <th class="px-3 py-3">Strategy</th>
+              <th class="px-3 py-3">Side</th>
+              <th class="px-3 py-3 text-right">Entry</th>
+              <th class="px-3 py-3 text-right">Exit</th>
+              <th class="px-3 py-3 text-right">Margin</th>
+              <th class="px-3 py-3 text-right">PnL</th>
+              <th class="px-3 py-3 text-right">Return %</th>
+              <th class="px-4 py-3 font-sans">Exit Reason</th>
+            </tr>
+          </thead>
+          <tbody id="history-body" class="divide-y divide-slate-800 text-xs">
+            <tr>
+              <td colspan="10" class="text-center py-6 text-slate-500 font-sans">No closed trades yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let activeTab = 'craig';
+
+    function switchTab(tab) {
+      activeTab = tab;
+      if (tab === 'craig') {
+        document.getElementById('tab-craig').classList.remove('hidden');
+        document.getElementById('tab-sneaky').classList.add('hidden');
+        document.getElementById('tab-btn-craig').className = "px-4 py-1.5 rounded bg-slate-800 text-white transition";
+        document.getElementById('tab-btn-sneaky').className = "px-4 py-1.5 rounded text-slate-400 hover:text-white transition";
+      } else {
+        document.getElementById('tab-craig').classList.add('hidden');
+        document.getElementById('tab-sneaky').classList.remove('hidden');
+        document.getElementById('tab-btn-craig').className = "px-4 py-1.5 rounded text-slate-400 hover:text-white transition";
+        document.getElementById('tab-btn-sneaky').className = "px-4 py-1.5 rounded bg-slate-800 text-white transition";
+      }
+    }
+
+    async function saveLimit(strategy) {
+      const inputId = strategy === 'CraigPer1' ? 'limit-craig' : 'limit-sneaky';
+      const slots = parseInt(document.getElementById(inputId).value);
+      if (isNaN(slots) || slots < 0) return alert('Enter a valid position limit (0-20)');
+
+      try {
+        const res = await fetch('/api/update-limit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ strategy, max_slots: slots })
+        });
+        if (res.ok) {
+          alert(`${strategy} limit updated to ${slots} positions.`);
+        }
+      } catch (err) {
+        alert('Failed to update limit.');
+      }
+    }
+
+    async function manualExit(posKey) {
+      if (!confirm(`Manually close position ${posKey} at market price?`)) return;
+
+      try {
+        const res = await fetch('/api/manual-exit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ pos_key: posKey })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(`Exit failed: ${err.detail || 'Error'}`);
+        }
+      } catch (err) {
+        alert('Network error requesting manual exit.');
+      }
+    }
+
+    function render(data) {
+      if (!data) return;
+
+      const acc = data.account;
+      document.getElementById('equity').innerText = `$${acc.equity.toFixed(2)}`;
+      document.getElementById('balance').innerText = `$${acc.balance.toFixed(2)}`;
+
+      const unEl = document.getElementById('unrealized-pnl');
+      unEl.innerText = `${acc.unrealized_pnl >= 0 ? '+' : ''}$${acc.unrealized_pnl.toFixed(2)}`;
+      unEl.className = `text-lg font-bold font-mono mt-1 ${acc.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+      const reEl = document.getElementById('realized-pnl');
+      reEl.innerText = `${acc.realized_pnl >= 0 ? '+' : ''}$${acc.realized_pnl.toFixed(2)}`;
+      reEl.className = `text-lg font-bold font-mono mt-1 ${acc.realized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+      document.getElementById('total-trades').innerText = acc.total_trades;
+      document.getElementById('win-rate').innerText = `${acc.win_rate}%`;
+
+      // Update limits stepper values if not currently focused
+      if (acc.limits) {
+        const craigIn = document.getElementById('limit-craig');
+        const sneakyIn = document.getElementById('limit-sneaky');
+        if (document.activeElement !== craigIn) craigIn.value = acc.limits.CraigPer1 ?? 3;
+        if (document.activeElement !== sneakyIn) sneakyIn.value = acc.limits.SneakyPivot ?? 3;
+      }
+
+      // Render Positions
+      document.getElementById('pos-count').innerText = data.positions.length;
+      const posBody = document.getElementById('positions-body');
+      if (data.positions.length === 0) {
+        posBody.innerHTML = `<tr><td colspan="11" class="text-center py-6 text-slate-500 font-sans">No open positions. Monitoring market...</td></tr>`;
+      } else {
+        posBody.innerHTML = data.positions.map(p => {
+          const pnlColor = p.unrealized_pnl >= 0 ? "text-emerald-400 font-bold" : "text-rose-400 font-bold";
+          const badge = p.direction === "BUY" ? "bg-emerald-950 text-emerald-400 border-emerald-700" : "bg-rose-950 text-rose-400 border-rose-700";
+          const stratColor = p.strategy === "CraigPer1" ? "text-indigo-400" : "text-amber-400";
+
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-4 py-3 font-bold font-sans text-slate-200">${p.symbol}</td>
+              <td class="px-3 py-3 ${stratColor} text-xs font-semibold">${p.strategy}</td>
+              <td class="px-3 py-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold border ${badge}">${p.direction}</span></td>
+              <td class="px-3 py-3 text-right text-slate-300">$${p.margin.toFixed(2)}</td>
+              <td class="px-3 py-3 text-right text-slate-300">$${p.entry_price.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-white font-bold">$${p.current_price.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-rose-300 font-bold">$${p.sl.toFixed(4)} ${p.breakeven_active ? '<span class="text-[9px] text-amber-400">(BE)</span>' : ''}</td>
+              <td class="px-3 py-3 text-right text-emerald-300 font-bold">$${p.tp.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right ${pnlColor}">${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}</td>
+              <td class="px-4 py-3 text-slate-400 text-[11px] font-sans">${p.reason}</td>
+              <td class="px-4 py-3 text-center">
+                <button onclick="manualExit('${p.key}')" class="px-2.5 py-1 bg-rose-950 hover:bg-rose-900 border border-rose-700 text-rose-300 rounded text-[11px] font-bold transition">
+                  Exit Mkt
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // CraigPer1 Screener
+      const craigBody = document.getElementById('craig-body');
+      if (data.craigper1 && data.craigper1.length > 0) {
+        craigBody.innerHTML = data.craigper1.map((r, i) => {
+          let badge = "bg-slate-800 text-slate-400 border-slate-700";
+          if (r.signal === "BUY") badge = "bg-emerald-950 text-emerald-400 border-emerald-600 font-bold";
+          if (r.signal === "SELL") badge = "bg-rose-950 text-rose-400 border-rose-600 font-bold";
+
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-4 py-3 font-bold font-sans text-slate-200"><span class="text-slate-500 mr-2">#${i+1}</span>${r.pair}</td>
+              <td class="px-3 py-3 text-right text-slate-400">$${r.open.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-slate-300">$${r.high.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-slate-300">$${r.low.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-white font-bold">$${r.close.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right font-bold text-emerald-400">+${r.change.toFixed(2)}%</td>
+              <td class="px-4 py-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[10px] border ${badge}">${r.signal}</span></td>
+              <td class="px-3 py-3 text-right text-indigo-300">${r.entry ? '$' + r.entry.toFixed(4) : '-'}</td>
+              <td class="px-3 py-3 text-right text-rose-300">${r.sl ? '$' + r.sl.toFixed(4) : '-'}</td>
+              <td class="px-3 py-3 text-right text-emerald-300">${r.tp ? '$' + r.tp.toFixed(4) : '-'}</td>
+              <td class="px-5 py-3 text-slate-400 text-[11px] font-sans">${r.reason}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Sneaky Pivot Screener
+      const sneakyBody = document.getElementById('sneaky-body');
+      if (data.sneakypivot && data.sneakypivot.length > 0) {
+        sneakyBody.innerHTML = data.sneakypivot.map((s, i) => {
+          let badge = "bg-slate-800 text-slate-400 border-slate-700";
+          if (s.signal === "BUY") badge = "bg-emerald-950 text-emerald-400 border-emerald-600 font-bold";
+          if (s.signal === "SELL") badge = "bg-rose-950 text-rose-400 border-rose-600 font-bold";
+          if (s.signal.startsWith("ARMED")) badge = "bg-amber-950 text-amber-400 border-amber-600 font-bold";
+
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-4 py-3 font-bold font-sans text-slate-200"><span class="text-slate-500 mr-2">#${i+1}</span>${s.pair}</td>
+              <td class="px-3 py-3 text-right text-white font-bold">$${s.close.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-rose-400">$${s.swing_high.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-rose-300">$${s.range_high.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-emerald-300">$${s.range_low.toFixed(4)}</td>
+              <td class="px-3 py-3 text-right text-emerald-400">$${s.swing_low.toFixed(4)}</td>
+              <td class="px-4 py-3 text-center font-sans"><span class="px-2 py-0.5 rounded text-[10px] border ${badge}">${s.signal}</span></td>
+              <td class="px-3 py-3 text-right text-indigo-300">${s.entry ? '$' + s.entry.toFixed(4) : '-'}</td>
+              <td class="px-3 py-3 text-right text-rose-300">${s.sl ? '$' + s.sl.toFixed(4) : '-'}</td>
+              <td class="px-3 py-3 text-right text-emerald-300">${s.tp ? '$' + s.tp.toFixed(4) : '-'}</td>
+              <td class="px-5 py-3 text-slate-400 text-[11px] font-sans">${s.reason}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // History
+      const histBody = document.getElementById('history-body');
+      if (data.history.length === 0) {
+        histBody.innerHTML = `<tr><td colspan="10" class="text-center py-6 text-slate-500 font-sans">No closed trades yet.</td></tr>`;
+      } else {
+        histBody.innerHTML = data.history.map(h => {
+          const pnlColor = h.pnl >= 0 ? "text-emerald-400" : "text-rose-400";
+          return `
+            <tr class="hover:bg-slate-800/40">
+              <td class="px-4 py-2.5 text-slate-400">${h.closed_at}</td>
+              <td class="px-4 py-2.5 font-bold font-sans text-slate-200">${h.symbol}</td>
+              <td class="px-3 py-2.5 text-slate-400 text-xs">${h.strategy}</td>
+              <td class="px-3 py-2.5">${h.direction}</td>
+              <td class="px-3 py-2.5 text-right text-slate-300">$${h.entry.toFixed(4)}</td>
+              <td class="px-3 py-2.5 text-right text-slate-300">$${h.exit.toFixed(4)}</td>
+              <td class="px-3 py-2.5 text-right text-slate-400">$${h.margin.toFixed(2)}</td>
+              <td class="px-3 py-2.5 text-right font-bold ${pnlColor}">${h.pnl >= 0 ? '+' : ''}$${h.pnl.toFixed(2)}</td>
+              <td class="px-3 py-2.5 text-right font-bold ${pnlColor}">${h.return_pct >= 0 ? '+' : ''}${h.return_pct}%</td>
+              <td class="px-4 py-2.5 text-slate-400 text-[11px] font-sans">${h.reason}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    function connect() {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+      ws.onopen = () => {
+        document.getElementById('status').innerText = "STREAM ONLINE";
+      };
+
+      ws.onmessage = (e) => render(JSON.parse(e.data));
+
+      ws.onclose = () => {
+        document.getElementById('status').innerText = "Reconnecting...";
+        setTimeout(connect, 2000);
+      };
+    }
+
+    connect();
+  </script>
+</body>
+</html>

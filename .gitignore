@@ -1,0 +1,10 @@
+# Python environment
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Database & Runtime State (Keep local transactions private)
+paper_trading.db
+paper_trading.db-wal
+paper_trading.db-shm
