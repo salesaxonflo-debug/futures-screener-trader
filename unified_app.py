@@ -19,6 +19,7 @@ INITIAL_BALANCE = 100.0
 LEVERAGE = 5.0
 RISK_PER_TRADE_PCT = 0.02
 
+# Dynamic runtime limits (persisted in SQLite)
 STRATEGY_LIMITS = {
     "CraigPer1": 3,
     "SneakyPivot": 3
@@ -41,14 +42,9 @@ CRAIG_SCREENER = []
 SNEAKY_SCREENER = []
 CONNECTED_CLIENTS = set()
 
-FUTURES_BASE_URLS = [
-    "https://fapi.binance.com",
-    "https://data-api.binance.vision"
-]
-
 
 # -------------------------------------------------------------
-# DATABASE MANAGEMENT
+# DATABASE MANAGEMENT (SQLITE WAL MODE)
 # -------------------------------------------------------------
 def get_db():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -96,7 +92,7 @@ def init_db():
                        );
                        """)
 
-        # 3. Open Positions
+        # 3. Open Positions (keyed by symbol_strategy)
         cursor.execute("""
                        CREATE TABLE IF NOT EXISTS open_positions
                        (
@@ -165,6 +161,7 @@ def init_db():
                        );
                        """)
 
+        # Seed/Load Strategy Config
         cursor.execute("SELECT * FROM strategy_config")
         cfg_rows = cursor.fetchall()
         if cfg_rows:
@@ -175,6 +172,7 @@ def init_db():
             cursor.execute("INSERT INTO strategy_config VALUES ('SneakyPivot', 3)")
             conn.commit()
 
+        # Seed/Load Account State
         cursor.execute("SELECT * FROM account_state WHERE id = 1")
         acc_row = cursor.fetchone()
         if acc_row:
@@ -183,6 +181,8 @@ def init_db():
             ACCOUNT["total_trades"] = acc_row["total_trades"]
             ACCOUNT["wins"] = acc_row["wins"]
             ACCOUNT["losses"] = acc_row["losses"]
+            logger.info(
+                f"Loaded existing account: Balance=${ACCOUNT['balance']:.2f}, Realized PnL=${ACCOUNT['realized_pnl']:.2f}")
         else:
             cursor.execute("""
                            INSERT INTO account_state (id, balance, realized_pnl, total_trades, wins, losses)
@@ -190,6 +190,7 @@ def init_db():
                            """, (INITIAL_BALANCE,))
             conn.commit()
 
+        # Load Open Positions
         cursor.execute("SELECT * FROM open_positions")
         for r in cursor.fetchall():
             ACCOUNT["positions"][r["pos_key"]] = {
@@ -209,6 +210,7 @@ def init_db():
                 "reason": r["reason"]
             }
 
+        # Load Order History
         cursor.execute("SELECT * FROM order_history ORDER BY id DESC LIMIT 50")
         for h in cursor.fetchall():
             ACCOUNT["order_history"].append({
@@ -304,38 +306,75 @@ def db_insert_trade_history(hist: dict):
 
 
 # -------------------------------------------------------------
-# MARKET DATA FETCHER
+# MARKET DATA FETCHER (BYBIT V5 - UNBLOCKED ON CLOUD/RENDER)
 # -------------------------------------------------------------
+BYBIT_API = "https://api.bybit.com/v5/market"
+
+
 def fetch_top_gainers():
+    """
+    Fetches the Top 30 24h gainers across USDT perpetual futures.
+    Unblocked on all cloud datacenters (AWS, Render, Koyeb).
+    """
+    url = f"{BYBIT_API}/tickers?category=linear"
     headers = {"User-Agent": "Mozilla/5.0"}
-    for base in FUTURES_BASE_URLS:
-        try:
-            r = requests.get(f"{base}/fapi/v1/ticker/24hr", headers=headers, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                valid = [t for t in data if t["symbol"].endswith("USDT") and "_" not in t["symbol"]]
-                valid.sort(key=lambda x: float(x.get("priceChangePercent", 0)), reverse=True)
-                return valid[:30]
-        except Exception:
-            continue
+    try:
+        resp = requests.get(url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json().get("result", {}).get("list", [])
+            valid = []
+            for t in data:
+                sym = t.get("symbol", "")
+                if sym.endswith("USDT"):
+                    try:
+                        chg = float(t.get("price24hPcnt", 0)) * 100
+                        valid.append({
+                            "symbol": sym,
+                            "lastPrice": float(t.get("lastPrice", 0)),
+                            "openPrice": float(t.get("prevPrice24h", 0)),
+                            "highPrice": float(t.get("highPrice24h", 0)),
+                            "lowPrice": float(t.get("lowPrice24h", 0)),
+                            "priceChangePercent": chg
+                        })
+                    except Exception:
+                        continue
+
+            valid.sort(key=lambda x: x["priceChangePercent"], reverse=True)
+            top_30 = valid[:30]
+            if top_30:
+                return top_30
+    except Exception as e:
+        logger.error(f"Error fetching top gainers from Bybit: {e}")
     return []
 
 
 def fetch_klines(symbol: str, interval: str = "15m", limit: int = 50):
+    """
+    Fetches OHLCV candlestick data from Bybit V5 Linear.
+    Intervals: '15m' maps to '15', '1d' maps to 'D'.
+    """
+    bybit_interval = "15" if interval == "15m" else "D"
+    url = f"{BYBIT_API}/kline"
+    params = {
+        "category": "linear",
+        "symbol": symbol,
+        "interval": bybit_interval,
+        "limit": limit
+    }
     headers = {"User-Agent": "Mozilla/5.0"}
-    for base in FUTURES_BASE_URLS:
-        try:
-            r = requests.get(f"{base}/fapi/v1/klines", params={"symbol": symbol, "interval": interval, "limit": limit},
-                             headers=headers, timeout=4)
-            if r.status_code == 200:
-                raw = r.json()
-                df = pd.DataFrame(raw).iloc[:, :6]
-                df.columns = ["time", "open", "high", "low", "close", "volume"]
+    try:
+        resp = requests.get(url, params=params, headers=headers, timeout=4)
+        if resp.status_code == 200:
+            raw = resp.json().get("result", {}).get("list", [])
+            if raw:
+                # Bybit returns newest candle first; reverse for chronological order
+                raw.reverse()
+                df = pd.DataFrame(raw, columns=["time", "open", "high", "low", "close", "volume", "turnover"])
                 for c in ["open", "high", "low", "close", "volume"]:
                     df[c] = pd.to_numeric(df[c], errors="coerce")
                 return df.dropna()
-        except Exception:
-            continue
+    except Exception as e:
+        logger.warning(f"Failed to fetch {interval} klines for {symbol}: {e}")
     return pd.DataFrame()
 
 
@@ -510,7 +549,7 @@ def evaluate_sneaky_pivot(df_15m: pd.DataFrame, lines: dict, current_price: floa
 
 
 # -------------------------------------------------------------
-# TRADE EXECUTION & MANAGEMENT
+# TRADE EXECUTION & PORTFOLIO ENGINE
 # -------------------------------------------------------------
 def open_position(symbol: str, signal: str, entry_price: float, sl: float, tp: float, strategy: str, reason: str):
     pos_key = f"{symbol}_{strategy}"
@@ -810,6 +849,7 @@ async def manual_exit(req: ManualExitRequest):
     update_portfolio_state()
     await broadcast_ws()
     return {"status": "success", "closed_key": req.pos_key, "exit_price": curr}
+
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
