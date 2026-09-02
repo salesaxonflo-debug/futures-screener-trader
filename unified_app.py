@@ -306,22 +306,22 @@ def db_insert_trade_history(hist: dict):
 
 
 # -------------------------------------------------------------
-# MARKET DATA FETCHER (BYBIT V5 - UNBLOCKED ON CLOUD/RENDER)
+# MARKET DATA FETCHER (BYBIT V5 - UNBLOCKED ON CLOUD / RENDER)
 # -------------------------------------------------------------
 BYBIT_API = "https://api.bybit.com/v5/market"
 
 
 def fetch_top_gainers():
-    """
-    Fetches the Top 30 24h gainers across USDT perpetual futures.
-    Unblocked on all cloud datacenters (AWS, Render, Koyeb).
-    """
     url = f"{BYBIT_API}/tickers?category=linear"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
     try:
-        resp = requests.get(url, headers=headers, timeout=5)
+        resp = requests.get(url, headers=headers, timeout=8)
         if resp.status_code == 200:
-            data = resp.json().get("result", {}).get("list", [])
+            result = resp.json().get("result", {})
+            data = result.get("list", [])
             valid = []
             for t in data:
                 sym = t.get("symbol", "")
@@ -343,16 +343,14 @@ def fetch_top_gainers():
             top_30 = valid[:30]
             if top_30:
                 return top_30
+        else:
+            logger.warning(f"Bybit returned status {resp.status_code}")
     except Exception as e:
         logger.error(f"Error fetching top gainers from Bybit: {e}")
     return []
 
 
 def fetch_klines(symbol: str, interval: str = "15m", limit: int = 50):
-    """
-    Fetches OHLCV candlestick data from Bybit V5 Linear.
-    Intervals: '15m' maps to '15', '1d' maps to 'D'.
-    """
     bybit_interval = "15" if interval == "15m" else "D"
     url = f"{BYBIT_API}/kline"
     params = {
@@ -361,13 +359,15 @@ def fetch_klines(symbol: str, interval: str = "15m", limit: int = 50):
         "interval": bybit_interval,
         "limit": limit
     }
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json"
+    }
     try:
-        resp = requests.get(url, params=params, headers=headers, timeout=4)
+        resp = requests.get(url, params=params, headers=headers, timeout=5)
         if resp.status_code == 200:
             raw = resp.json().get("result", {}).get("list", [])
             if raw:
-                # Bybit returns newest candle first; reverse for chronological order
                 raw.reverse()
                 df = pd.DataFrame(raw, columns=["time", "open", "high", "low", "close", "volume", "turnover"])
                 for c in ["open", "high", "low", "close", "volume"]:
@@ -390,7 +390,7 @@ def detect_fractal_swings(df: pd.DataFrame, n: int = 2):
             swings.append({"index": i, "price": df["high"].iloc[i], "type": "high"})
         elif df["low"].iloc[i] == l_win.min():
             swings.append({"index": i, "price": df["low"].iloc[i], "type": "low"})
-    return swings
+    return swings[cite: 1]
 
 
 def detect_fvgs(df: pd.DataFrame):
@@ -399,9 +399,9 @@ def detect_fvgs(df: pd.DataFrame):
         c1 = df.iloc[i]
         c3 = df.iloc[i + 2]
         if c1["high"] < c3["low"]:
-            fvgs.append({"type": "bullish", "midpoint": (c1["high"] + c3["low"]) / 2.0})
+            fvgs.append({"type": "bullish", "midpoint": (c1["high"] + c3["low"]) / 2.0})[cite: 1]
         elif c1["low"] > c3["high"]:
-            fvgs.append({"type": "bearish", "midpoint": (c1["low"] + c3["high"]) / 2.0})
+            fvgs.append({"type": "bearish", "midpoint": (c1["low"] + c3["high"]) / 2.0})[cite: 1]
     return fvgs
 
 
@@ -409,17 +409,17 @@ def evaluate_craigper1(df: pd.DataFrame, current_price: float):
     if df.empty or len(df) < 20:
         return None
 
-    swings = detect_fractal_swings(df, n=2)
-    fvgs = detect_fvgs(df)
+    swings = detect_fractal_swings(df, n=2)[cite: 1]
+    fvgs = detect_fvgs(df)[cite: 1]
 
     last_high = next((s["price"] for s in reversed(swings) if s["type"] == "high"), None)
     last_low = next((s["price"] for s in reversed(swings) if s["type"] == "low"), None)
 
     if last_high and current_price > last_high:
         bull_fvg = next((f for f in reversed(fvgs) if f["type"] == "bullish"), None)
-        entry = bull_fvg["midpoint"] if bull_fvg else current_price
-        sl = last_low if last_low else (entry * 0.985)
-        dist = abs(entry - sl)
+        entry = bull_fvg["midpoint"] if bull_fvg else current_price[cite: 1]
+        sl = last_low if last_low else (entry * 0.985)[cite: 1]
+        dist = abs(entry - sl)[cite: 1]
         if dist > 0 and entry > sl:
             return {
                 "signal": "BUY",
@@ -432,9 +432,9 @@ def evaluate_craigper1(df: pd.DataFrame, current_price: float):
 
     elif last_low and current_price < last_low:
         bear_fvg = next((f for f in reversed(fvgs) if f["type"] == "bearish"), None)
-        entry = bear_fvg["midpoint"] if bear_fvg else current_price
-        sl = last_high if last_high else (entry * 1.015)
-        dist = abs(sl - entry)
+        entry = bear_fvg["midpoint"] if bear_fvg else current_price[cite: 1]
+        sl = last_high if last_high else (entry * 1.015)[cite: 1]
+        dist = abs(sl - entry)[cite: 1]
         if dist > 0 and sl > entry:
             return {
                 "signal": "SELL",
