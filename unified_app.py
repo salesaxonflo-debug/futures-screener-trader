@@ -306,34 +306,36 @@ def db_insert_trade_history(hist: dict):
 
 
 # -------------------------------------------------------------
-# MARKET DATA FETCHER (BYBIT V5 - UNBLOCKED ON CLOUD / RENDER)
+# MARKET DATA FETCHER (MEXC CONTRACT - 0% CLOUD IP BLOCKS)
 # -------------------------------------------------------------
-BYBIT_API = "https://api.bybit.com/v5/market"
+MEXC_API = "https://contract.mexc.com/api/v1/contract"
 
 
 def fetch_top_gainers():
-    url = f"{BYBIT_API}/tickers?category=linear"
+    url = f"{MEXC_API}/ticker"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json"
     }
     try:
-        resp = requests.get(url, headers=headers, timeout=8)
+        resp = requests.get(url, headers=headers, timeout=6)
         if resp.status_code == 200:
-            result = resp.json().get("result", {})
-            data = result.get("list", [])
+            data = resp.json().get("data", [])
             valid = []
             for t in data:
                 sym = t.get("symbol", "")
-                if sym.endswith("USDT"):
+                if sym.endswith("_USDT"):
+                    clean_sym = sym.replace("_", "")
                     try:
-                        chg = float(t.get("price24hPcnt", 0)) * 100
+                        chg = float(t.get("riseFallRate", 0)) * 100
+                        last_p = float(t.get("lastPrice", 0))
                         valid.append({
-                            "symbol": sym,
-                            "lastPrice": float(t.get("lastPrice", 0)),
-                            "openPrice": float(t.get("prevPrice24h", 0)),
-                            "highPrice": float(t.get("highPrice24h", 0)),
-                            "lowPrice": float(t.get("lowPrice24h", 0)),
+                            "raw_symbol": sym,
+                            "symbol": clean_sym,
+                            "lastPrice": last_p,
+                            "openPrice": last_p / (1 + (chg / 100)) if chg != -100 else last_p,
+                            "highPrice": float(t.get("high24Price", 0)),
+                            "lowPrice": float(t.get("low24Price", 0)),
                             "priceChangePercent": chg
                         })
                     except Exception:
@@ -344,37 +346,46 @@ def fetch_top_gainers():
             if top_30:
                 return top_30
         else:
-            logger.warning(f"Bybit returned status {resp.status_code}")
+            logger.warning(f"MEXC ticker API returned {resp.status_code}")
     except Exception as e:
-        logger.error(f"Error fetching top gainers from Bybit: {e}")
+        logger.error(f"Error fetching tickers from MEXC: {e}")
     return []
 
 
-def fetch_klines(symbol: str, interval: str = "15m", limit: int = 50):
-    bybit_interval = "15" if interval == "15m" else "D"
-    url = f"{BYBIT_API}/kline"
+def fetch_klines(raw_symbol: str, interval: str = "15m", limit: int = 50):
+    mexc_interval = "Min15" if interval == "15m" else "Day1"
+    url = f"{MEXC_API}/kline/{raw_symbol}"
     params = {
-        "category": "linear",
-        "symbol": symbol,
-        "interval": bybit_interval,
-        "limit": limit
+        "interval": mexc_interval
     }
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     try:
         resp = requests.get(url, params=params, headers=headers, timeout=5)
         if resp.status_code == 200:
-            raw = resp.json().get("result", {}).get("list", [])
-            if raw:
-                raw.reverse()
-                df = pd.DataFrame(raw, columns=["time", "open", "high", "low", "close", "volume", "turnover"])
+            res_data = resp.json().get("data", {})
+            times = res_data.get("time", [])
+            opens = res_data.get("open", [])
+            highs = res_data.get("high", [])
+            lows = res_data.get("low", [])
+            closes = res_data.get("close", [])
+            vols = res_data.get("vol", [])
+
+            if times and len(times) > 0:
+                df = pd.DataFrame({
+                    "time": times,
+                    "open": opens,
+                    "high": highs,
+                    "low": lows,
+                    "close": closes,
+                    "volume": vols
+                })
                 for c in ["open", "high", "low", "close", "volume"]:
                     df[c] = pd.to_numeric(df[c], errors="coerce")
-                return df.dropna()
+                return df.dropna().tail(limit)
     except Exception as e:
-        logger.warning(f"Failed to fetch {interval} klines for {symbol}: {e}")
+        logger.warning(f"Failed klines for {raw_symbol}: {e}")
     return pd.DataFrame()
 
 
@@ -709,6 +720,7 @@ async def unified_engine_loop():
 
             for item in gainers:
                 sym = item["symbol"]
+                raw_sym = item["raw_symbol"]
                 curr_price = float(item.get("lastPrice", 0))
                 chg = float(item.get("priceChangePercent", 0))
                 o = float(item.get("openPrice", 0))
@@ -716,8 +728,8 @@ async def unified_engine_loop():
                 l = float(item.get("lowPrice", 0))
                 LATEST_PRICES[sym] = curr_price
 
-                df_15m = fetch_klines(sym, interval="15m", limit=35)
-                df_daily = fetch_klines(sym, interval="1d", limit=35)
+                df_15m = fetch_klines(raw_sym, interval="15m", limit=35)
+                df_daily = fetch_klines(raw_sym, interval="1d", limit=35)
 
                 # 1. CraigPer1
                 c_setup = evaluate_craigper1(df_15m, curr_price)
@@ -852,6 +864,7 @@ async def manual_exit(req: ManualExitRequest):
     update_portfolio_state()
     await broadcast_ws()
     return {"status": "success", "closed_key": req.pos_key, "exit_price": curr}
+
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
