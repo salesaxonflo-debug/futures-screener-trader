@@ -390,7 +390,7 @@ def detect_fractal_swings(df: pd.DataFrame, n: int = 2):
             swings.append({"index": i, "price": df["high"].iloc[i], "type": "high"})
         elif df["low"].iloc[i] == l_win.min():
             swings.append({"index": i, "price": df["low"].iloc[i], "type": "low"})
-    return swings[cite: 1]
+    return swings
 
 
 def detect_fvgs(df: pd.DataFrame):
@@ -399,9 +399,9 @@ def detect_fvgs(df: pd.DataFrame):
         c1 = df.iloc[i]
         c3 = df.iloc[i + 2]
         if c1["high"] < c3["low"]:
-            fvgs.append({"type": "bullish", "midpoint": (c1["high"] + c3["low"]) / 2.0})[cite: 1]
+            fvgs.append({"type": "bullish", "midpoint": (c1["high"] + c3["low"]) / 2.0})
         elif c1["low"] > c3["high"]:
-            fvgs.append({"type": "bearish", "midpoint": (c1["low"] + c3["high"]) / 2.0})[cite: 1]
+            fvgs.append({"type": "bearish", "midpoint": (c1["low"] + c3["high"]) / 2.0})
     return fvgs
 
 
@@ -409,17 +409,17 @@ def evaluate_craigper1(df: pd.DataFrame, current_price: float):
     if df.empty or len(df) < 20:
         return None
 
-    swings = detect_fractal_swings(df, n=2)[cite: 1]
-    fvgs = detect_fvgs(df)[cite: 1]
+    swings = detect_fractal_swings(df, n=2)
+    fvgs = detect_fvgs(df)
 
     last_high = next((s["price"] for s in reversed(swings) if s["type"] == "high"), None)
     last_low = next((s["price"] for s in reversed(swings) if s["type"] == "low"), None)
 
     if last_high and current_price > last_high:
         bull_fvg = next((f for f in reversed(fvgs) if f["type"] == "bullish"), None)
-        entry = bull_fvg["midpoint"] if bull_fvg else current_price[cite: 1]
-        sl = last_low if last_low else (entry * 0.985)[cite: 1]
-        dist = abs(entry - sl)[cite: 1]
+        entry = bull_fvg["midpoint"] if bull_fvg else current_price
+        sl = last_low if last_low else (entry * 0.985)
+        dist = abs(entry - sl)
         if dist > 0 and entry > sl:
             return {
                 "signal": "BUY",
@@ -432,9 +432,9 @@ def evaluate_craigper1(df: pd.DataFrame, current_price: float):
 
     elif last_low and current_price < last_low:
         bear_fvg = next((f for f in reversed(fvgs) if f["type"] == "bearish"), None)
-        entry = bear_fvg["midpoint"] if bear_fvg else current_price[cite: 1]
-        sl = last_high if last_high else (entry * 1.015)[cite: 1]
-        dist = abs(sl - entry)[cite: 1]
+        entry = bear_fvg["midpoint"] if bear_fvg else current_price
+        sl = last_high if last_high else (entry * 1.015)
+        dist = abs(sl - entry)
         if dist > 0 and sl > entry:
             return {
                 "signal": "SELL",
@@ -477,8 +477,10 @@ def compute_magic_lines(df_daily: pd.DataFrame):
             swing_low = float(row["low"])
             break
 
-    if swing_high is None: swing_high = range_high * 1.025
-    if swing_low is None: swing_low = range_low * 0.975
+    if swing_high is None:
+        swing_high = range_high * 1.025
+    if swing_low is None:
+        swing_low = range_low * 0.975
 
     return {
         "range_high": range_high,
@@ -501,7 +503,8 @@ def evaluate_sneaky_pivot(df_15m: pd.DataFrame, lines: dict, current_price: floa
     c2 = df_15m.iloc[-2]
 
     c1_range = c1["high"] - c1["low"]
-    if c1_range <= 0: return None
+    if c1_range <= 0:
+        return None
     c1_body_pct = abs(c1["close"] - c1["open"]) / c1_range
 
     tentative_bias = None
@@ -849,7 +852,6 @@ async def manual_exit(req: ManualExitRequest):
     update_portfolio_state()
     await broadcast_ws()
     return {"status": "success", "closed_key": req.pos_key, "exit_price": curr}
-
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
