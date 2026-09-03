@@ -306,7 +306,7 @@ def db_insert_trade_history(hist: dict):
 
 
 # -------------------------------------------------------------
-# MARKET DATA FETCHER (MEXC CONTRACT - 0% CLOUD IP BLOCKS)
+# MARKET DATA FETCHER (MEXC CONTRACT API)
 # -------------------------------------------------------------
 MEXC_API = "https://contract.mexc.com/api/v1/contract"
 
@@ -780,20 +780,43 @@ async def unified_engine_loop():
 
 
 def get_dashboard_payload():
+    total_trades = ACCOUNT["total_trades"]
+    overall_win_rate = round((ACCOUNT["wins"] / total_trades * 100), 1) if total_trades > 0 else 0.0
+
+    # Calculate per-strategy metrics
+    strat_stats = {
+        "CraigPer1": {"wins": 0, "losses": 0, "total": 0, "win_rate": 0.0},
+        "SneakyPivot": {"wins": 0, "losses": 0, "total": 0, "win_rate": 0.0}
+    }
+
+    for trade in ACCOUNT["order_history"]:
+        st = trade.get("strategy")
+        if st in strat_stats:
+            strat_stats[st]["total"] += 1
+            if trade.get("pnl", 0) > 0:
+                strat_stats[st]["wins"] += 1
+            else:
+                strat_stats[st]["losses"] += 1
+
+    for st in strat_stats:
+        tot = strat_stats[st]["total"]
+        if tot > 0:
+            strat_stats[st]["win_rate"] = round((strat_stats[st]["wins"] / tot) * 100, 1)
+
     return {
         "account": {
             "balance": round(ACCOUNT["balance"], 2),
             "equity": round(ACCOUNT["equity"], 2),
             "realized_pnl": round(ACCOUNT["realized_pnl"], 2),
             "unrealized_pnl": round(ACCOUNT["unrealized_pnl"], 2),
-            "total_trades": ACCOUNT["total_trades"],
-            "win_rate": round((ACCOUNT["wins"] / ACCOUNT["total_trades"] * 100), 1) if ACCOUNT[
-                                                                                           "total_trades"] > 0 else 0.0,
+            "total_trades": total_trades,
+            "win_rate": overall_win_rate,
+            "strategy_stats": strat_stats,
             "leverage": f"{int(LEVERAGE)}x",
             "limits": STRATEGY_LIMITS
         },
         "positions": list(ACCOUNT["positions"].values()),
-        "history": ACCOUNT["order_history"][:15],
+        "history": ACCOUNT["order_history"][:25],
         "craigper1": CRAIG_SCREENER,
         "sneakypivot": SNEAKY_SCREENER
     }
@@ -820,6 +843,11 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/healthz")
+def healthcheck():
+    return {"status": "ok"}
 
 
 @app.websocket("/ws")
@@ -864,7 +892,6 @@ async def manual_exit(req: ManualExitRequest):
     update_portfolio_state()
     await broadcast_ws()
     return {"status": "success", "closed_key": req.pos_key, "exit_price": curr}
-
 
 @app.get("/", response_class=HTMLResponse)
 def serve_dashboard():
